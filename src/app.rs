@@ -2,6 +2,8 @@ use crate::aria2_client::TorrentStatus;
 use crate::torrent_search::TorrentSearchResult;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use std::io;
+use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppMode {
@@ -14,7 +16,7 @@ pub enum AppMode {
 #[derive(Debug)]
 pub struct App {
     pub mode: AppMode,
-    pub search_query: String,
+    pub search_query: Input,
     pub search_results: Vec<TorrentSearchResult>,
     pub active_downloads: Vec<TorrentStatus>,
     pub selected_index: usize,
@@ -31,7 +33,7 @@ impl App {
     pub fn new() -> Self {
         App {
             mode: AppMode::Normal,
-            search_query: String::new(),
+            search_query: Input::default(),
             search_results: Vec::new(),
             active_downloads: Vec::new(),
             selected_index: 0,
@@ -72,7 +74,7 @@ impl App {
     pub fn update_loading_animation(&mut self) {
         if self.search_in_progress {
             self.loading_frame = (self.loading_frame + 1) % 8;
-            
+
             // Update search progress message with different states
             let progress_messages = [
                 "Connecting to YTS movie database...",
@@ -84,21 +86,19 @@ impl App {
                 "Sorting results by seeders...",
                 "Finalizing search results...",
             ];
-            
+
             let message_index = (self.loading_frame / 4) % progress_messages.len();
             self.search_progress = progress_messages[message_index].to_string();
         }
     }
 
     pub fn get_loading_indicator(&self) -> &'static str {
-        const LOADING_FRAMES: &[&str] = &[
-            "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"
-        ];
+        const LOADING_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
         LOADING_FRAMES[self.loading_frame]
     }
 
-    pub fn handle_input(&mut self) -> io::Result<()> {
-        if event::poll(std::time::Duration::from_millis(100))? {
+    pub fn handle_input(&mut self) -> io::Result<bool> {
+        if event::poll(std::time::Duration::from_millis(1))? {
             if let Event::Key(key) = event::read()? {
                 match self.mode {
                     AppMode::Normal => self.handle_normal_mode(key),
@@ -106,15 +106,18 @@ impl App {
                     AppMode::Results => self.handle_results_mode(key),
                     AppMode::Searching => self.handle_searching_mode(key),
                 }
+                return Ok(true);
             }
         }
-        Ok(())
+        Ok(false)
     }
 
     fn handle_normal_mode(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Char('s') => self.mode = AppMode::Search,
+            KeyCode::Char('s') => {
+                self.mode = AppMode::Search;
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.active_downloads.is_empty() {
                     self.selected_index = (self.selected_index + 1) % self.active_downloads.len();
@@ -137,20 +140,16 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.mode = AppMode::Normal;
-                self.search_query.clear();
+                self.search_query.reset();
             }
             KeyCode::Enter => {
-                if !self.search_query.is_empty() {
+                if !self.search_query.value().is_empty() {
                     self.start_search();
                 }
             }
-            KeyCode::Backspace => {
-                self.search_query.pop();
+            _ => {
+                self.search_query.handle_event(&Event::Key(key));
             }
-            KeyCode::Char(c) => {
-                self.search_query.push(c);
-            }
-            _ => {}
         }
     }
 

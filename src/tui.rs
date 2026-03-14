@@ -2,15 +2,18 @@ use crate::app::{App, AppMode};
 use crate::utils::{format_bytes, format_speed};
 use ratatui::{
     Terminal,
-    layout::{Constraint, Direction, Layout, Alignment},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Clear},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 use std::io::Result;
 
 // Draw the UI using an existing terminal instance (prevents flicker & overlap)
-pub fn render_ui<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &App) -> Result<()> {
+pub fn render_ui<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &App,
+) -> Result<()> {
     terminal.draw(|f| {
         // Clear whole frame first so shorter new content does not leave remnants
         let size = f.size();
@@ -41,14 +44,19 @@ pub fn render_ui<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                 f.render_widget(instructions, chunks[0]);
             },
             AppMode::Search => {
-                let search_text = format!("Search: {}", app.search_query);
+                let search_text = format!("Search: {}", app.search_query.value());
                 let search_bar = Paragraph::new(search_text)
                     .style(Style::default().fg(Color::Yellow))
                     .block(Block::default().title("🔍 Enter Search Query (Press Enter to search, Esc to cancel)").borders(Borders::ALL));
                 f.render_widget(search_bar, chunks[0]);
+                // Set cursor position. "Search: " is 8 characters. Add 1 for the margin.
+                f.set_cursor(
+                    chunks[0].x + 1 + 8 + app.search_query.visual_cursor() as u16,
+                    chunks[0].y + 1
+                );
             },
             AppMode::Searching => {
-                let searching_text = format!("Searching for: {}", app.search_query);
+                let searching_text = format!("Searching for: {}", app.search_query.value());
                 let loading_indicator = app.get_loading_indicator();
                 let title = format!("{} Searching Multiple Sources...", loading_indicator);
                 let search_bar = Paragraph::new(searching_text)
