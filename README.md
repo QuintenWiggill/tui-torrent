@@ -1,4 +1,4 @@
-
+<img height="300" alt="tui-torrent-logo" src="https://github.com/user-attachments/assets/7769147f-cf3e-4cd1-97c2-d352f557332b" />
 
 # TUI Torrent
 
