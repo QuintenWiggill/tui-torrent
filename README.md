@@ -1,4 +1,4 @@
-<img width="1024" alt="Tui Protect Logo with Charcoal Gray" src="https://github.com/user-attachments/assets/7ce12aa5-f15e-42cd-a94f-2719d1e4a2d8" />
+
 
 # TUI Torrent
 
