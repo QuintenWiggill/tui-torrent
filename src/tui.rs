@@ -37,6 +37,8 @@ pub fn render_ui<B: ratatui::backend::Backend>(
                     Span::raw(" to search, "),
                     Span::styled("↑↓/jk", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)),
                     Span::raw(" to navigate, "),
+                    Span::styled("p", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+                    Span::raw(" to pause/resume, "),
                     Span::styled("q", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)),
                     Span::raw(" to quit"),
                 ]))
@@ -82,7 +84,11 @@ pub fn render_ui<B: ratatui::backend::Backend>(
         // Status bar
         let status_color = if app.search_in_progress {
             Color::Blue
-        } else if app.status_message.contains("failed") || app.status_message.contains("error") {
+        } else if app.status_message.contains("failed")
+            || app.status_message.contains("error")
+            || app.status_message.contains("Warning")
+            || !app.aria2_installed
+        {
             Color::Red
         } else {
             Color::Green
@@ -103,7 +109,24 @@ pub fn render_ui<B: ratatui::backend::Backend>(
     // Render main content based on app mode
         match app.mode {
             AppMode::Normal | AppMode::Search => {
-                if app.active_downloads.is_empty() {
+                if !app.aria2_installed {
+                    let warn_msg = Paragraph::new(
+                        "\n⚠️  WARNING: aria2 daemon (aria2c) is not running or not installed!\n\n\
+                        Downloads will not work. Please install or start aria2c:\n\
+                        - macOS: brew install aria2\n\
+                        - Ubuntu/Debian: sudo apt install aria2\n\n\
+                        Press 's' to search torrents anyway (search-only mode)."
+                    )
+                    .style(Style::default().fg(Color::Red))
+                    .alignment(Alignment::Center)
+                    .block(
+                        Block::default()
+                            .title("⚠️ Warning")
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Red))
+                    );
+                    f.render_widget(warn_msg, chunks[1]);
+                } else if app.active_downloads.is_empty() {
                     let empty_msg = Paragraph::new("No active downloads. Press 's' to search for torrents.")
                         .style(Style::default().fg(Color::Gray))
                         .alignment(Alignment::Center)
@@ -127,23 +150,51 @@ pub fn render_ui<B: ratatui::backend::Backend>(
                                 (t.completed_length.clone(), t.total_length.clone(), String::new())
                             };
 
-                            let title = format!(
-                                "📁 {} - {}/{} {}",
-                                t.status, formatted_completed, formatted_total, progress
-                            );
+                            let name = t.bittorrent
+                                .as_ref()
+                                .and_then(|b| b.info.as_ref())
+                                .and_then(|info| info.name.clone());
 
-                            // Add speed info if available
-                            let title = if t.download_speed != "0" && !t.download_speed.is_empty() {
-                                format!("{} @ {}", title, format_speed(&t.download_speed))
-                            } else {
-                                title
+                            let display_name = match name {
+                                Some(n) => {
+                                    if n.len() > 50 {
+                                        format!("{}...", &n[..47])
+                                    } else {
+                                        n
+                                    }
+                                }
+                                None => format!("Torrent (GID: {})", t.gid),
                             };
-                            let style = if i == app.selected_index && app.mode == AppMode::Normal {
+
+                            let name_style = if i == app.selected_index && app.mode == AppMode::Normal {
                                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                             } else {
                                 Style::default()
                             };
-                            ListItem::new(title).style(style)
+
+                            let status_style = Style::default().fg(match t.status.as_str() {
+                                "active" => Color::Green,
+                                "paused" => Color::DarkGray,
+                                "waiting" => Color::Blue,
+                                _ => Color::Red,
+                            }).add_modifier(Modifier::BOLD);
+
+                            let mut spans = vec![
+                                Span::styled("📁 ", Style::default()),
+                                Span::styled(display_name, name_style),
+                                Span::raw(" ["),
+                                Span::styled(t.status.clone(), status_style),
+                                Span::raw("] - "),
+                                Span::styled(format!("{}/{}", formatted_completed, formatted_total), Style::default().fg(Color::Cyan)),
+                                Span::raw(progress),
+                            ];
+
+                            if t.download_speed != "0" && !t.download_speed.is_empty() {
+                                spans.push(Span::raw(" @ "));
+                                spans.push(Span::styled(format_speed(&t.download_speed), Style::default().fg(Color::Green)));
+                            }
+
+                            ListItem::new(Line::from(spans))
                         })
                         .collect();
 
@@ -182,7 +233,6 @@ pub fn render_ui<B: ratatui::backend::Backend>(
                             let source_color = match result.source.as_str() {
                                 "YTS" => Color::Green,
                                 "PirateBay" => Color::Blue,
-                                "1337x" => Color::Magenta,
                                 _ => Color::Gray,
                             };
 

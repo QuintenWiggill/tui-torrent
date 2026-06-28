@@ -27,6 +27,9 @@ pub struct App {
     pub download_requested: bool,
     pub loading_frame: usize,
     pub search_progress: String,
+    pub aria2_installed: bool,
+    pub pause_requested: Option<String>,
+    pub resume_requested: Option<String>,
 }
 
 impl App {
@@ -44,6 +47,9 @@ impl App {
             download_requested: false,
             loading_frame: 0,
             search_progress: String::new(),
+            aria2_installed: true,
+            pause_requested: None,
+            resume_requested: None,
         }
     }
 
@@ -81,8 +87,6 @@ impl App {
                 "Searching YTS for movies...",
                 "Connecting to PirateBay API...",
                 "Searching PirateBay torrents...",
-                "Checking 1337x mirrors...",
-                "Searching 1337x database...",
                 "Sorting results by seeders...",
                 "Finalizing search results...",
             ];
@@ -117,6 +121,17 @@ impl App {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('s') => {
                 self.mode = AppMode::Search;
+            }
+            KeyCode::Char('p') => {
+                if !self.active_downloads.is_empty() {
+                    if let Some(download) = self.active_downloads.get(self.selected_index) {
+                        if download.status == "paused" {
+                            self.resume_requested = Some(download.gid.clone());
+                        } else {
+                            self.pause_requested = Some(download.gid.clone());
+                        }
+                    }
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.active_downloads.is_empty() {

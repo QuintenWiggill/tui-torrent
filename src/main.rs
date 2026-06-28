@@ -10,7 +10,6 @@ pub mod utils;
 
 use app::{App, AppMode};
 use aria2_manager::Aria2Manager;
-use ascii_art::TUI_LOGO;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
@@ -22,7 +21,6 @@ use torrent_search::TorrentSearchEngine;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", TUI_LOGO);
     println!("🏴‍☠️ Starting TUI Torrent...");
 
     let mut aria2_manager = Aria2Manager::new();
@@ -53,9 +51,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("🚀 Starting TUI interface...");
 
-    // Small delay to let user see the startup messages
-    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
     // Setup terminal
     terminal::enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
@@ -67,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create app state
     let mut app = App::new();
+    app.aria2_installed = aria2_available;
     let search_engine = TorrentSearchEngine::new();
 
     // Track if we've already rendered the initial searching frame
@@ -82,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         app.status_message = format!("Ready - Downloads: {} - Press 's' to search", short_path);
     } else {
-        app.status_message = "Ready - Search only (aria2 not available)".to_string();
+        app.status_message = "Warning - Search only (aria2 is not available/installed)".to_string();
     }
 
     // Main loop
@@ -131,7 +127,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Handle torrent download request
         if app.download_requested && !app.search_results.is_empty() {
-            if let Some(selected) = app.search_results.get(app.selected_index) {
+            if !aria2_available {
+                app.status_message = "Cannot download: aria2 is not available/installed".to_string();
+            } else if let Some(selected) = app.search_results.get(app.selected_index) {
                 match torrent_search::add_torrent(&selected.magnet_link).await {
                     Ok(gid) => {
                         app.status_message =
@@ -142,14 +140,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         app.status_message = format!("Failed to add torrent: {}", e);
                     }
                 }
-                needs_render = true;
             }
             app.download_requested = false;
+            needs_render = true;
         }
 
-        // Update downloads list every 2 seconds
-        if last_update.elapsed() >= Duration::from_secs(2) {
-            app.active_downloads = aria2_client::get_active_downloads().await?;
+        // Handle pause request
+        if let Some(gid) = app.pause_requested.take() {
+            if aria2_available {
+                match aria2_client::pause_download(&gid).await {
+                    Ok(Ok(_)) => {
+                        app.status_message = format!("Paused download (GID: {})", gid);
+                        if let Ok(downloads) = aria2_client::get_all_downloads().await {
+                            app.active_downloads = downloads;
+                        }
+                    }
+                    Ok(Err(err)) => {
+                        app.status_message = format!("Failed to pause: {}", err);
+                    }
+                    Err(e) => {
+                        app.status_message = format!("RPC error: {}", e);
+                    }
+                }
+            } else {
+                app.status_message = "Cannot pause: aria2 is not available".to_string();
+            }
+            needs_render = true;
+        }
+
+        // Handle resume request
+        if let Some(gid) = app.resume_requested.take() {
+            if aria2_available {
+                match aria2_client::resume_download(&gid).await {
+                    Ok(Ok(_)) => {
+                        app.status_message = format!("Resumed download (GID: {})", gid);
+                        if let Ok(downloads) = aria2_client::get_all_downloads().await {
+                            app.active_downloads = downloads;
+                        }
+                    }
+                    Ok(Err(err)) => {
+                        app.status_message = format!("Failed to resume: {}", err);
+                    }
+                    Err(e) => {
+                        app.status_message = format!("RPC error: {}", e);
+                    }
+                }
+            } else {
+                app.status_message = "Cannot resume: aria2 is not available".to_string();
+            }
+            needs_render = true;
+        }
+
+        // Update downloads list every 2 seconds if aria2 is available
+        if aria2_available && last_update.elapsed() >= Duration::from_secs(2) {
+            match aria2_client::get_all_downloads().await {
+                Ok(downloads) => {
+                    app.active_downloads = downloads;
+                }
+                Err(e) => {
+                    app.status_message = format!("Error updating downloads: {}", e);
+                }
+            }
             last_update = Instant::now();
             needs_render = true;
         }

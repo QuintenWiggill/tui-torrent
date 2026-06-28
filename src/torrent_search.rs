@@ -1,4 +1,4 @@
-use crate::api::{X1337Client, YtsClient, PirateBayClient};
+use crate::api::{YtsClient, PirateBayClient};
 use serde::{Deserialize, Serialize};
 use tokio::time::{timeout, Duration};
 
@@ -14,7 +14,6 @@ pub struct TorrentSearchResult {
 
 #[derive(Clone)]
 pub struct TorrentSearchEngine {
-    x1337_client: X1337Client,
     yts_client: YtsClient,
     piratebay_client: PirateBayClient,
 }
@@ -22,7 +21,6 @@ pub struct TorrentSearchEngine {
 impl TorrentSearchEngine {
     pub fn new() -> Self {
         Self {
-            x1337_client: X1337Client::new(),
             yts_client: YtsClient::new(),
             piratebay_client: PirateBayClient::new(),
         }
@@ -31,18 +29,15 @@ impl TorrentSearchEngine {
     pub async fn search_torrents(&self, query: &str, category: Option<&str>) -> Result<Vec<TorrentSearchResult>, Box<dyn std::error::Error + Send + Sync>> {
         let mut all_results = Vec::new();
 
-        // Search YTS (movies)
-        if let Ok(Ok(mut results)) = timeout(Duration::from_secs(15), self.search_yts(query)).await {
+        let yts_fut = timeout(Duration::from_secs(10), self.search_yts(query));
+        let pb_fut = timeout(Duration::from_secs(25), self.search_piratebay(query, category));
+
+        let (yts_res, pb_res) = tokio::join!(yts_fut, pb_fut);
+
+        if let Ok(Ok(mut results)) = yts_res {
             all_results.append(&mut results);
         }
-
-        // Search PirateBay
-        if let Ok(Ok(mut results)) = timeout(Duration::from_secs(15), self.search_piratebay(query, category)).await {
-            all_results.append(&mut results);
-        }
-
-        // Search 1337x
-        if let Ok(Ok(mut results)) = timeout(Duration::from_secs(15), self.search_1337x(query, category)).await {
+        if let Ok(Ok(mut results)) = pb_res {
             all_results.append(&mut results);
         }
 
@@ -59,10 +54,6 @@ impl TorrentSearchEngine {
 
     async fn search_piratebay(&self, query: &str, _category: Option<&str>) -> Result<Vec<TorrentSearchResult>, Box<dyn std::error::Error + Send + Sync>> {
         self.piratebay_client.search(query, None).await
-    }
-
-    async fn search_1337x(&self, query: &str, category: Option<&str>) -> Result<Vec<TorrentSearchResult>, Box<dyn std::error::Error + Send + Sync>> {
-        self.x1337_client.search(query, category).await
     }
 }
 
