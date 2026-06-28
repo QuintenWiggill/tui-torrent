@@ -17,6 +17,7 @@ struct YtsResponse {
 
 #[derive(Debug, Deserialize)]
 struct YtsData {
+    #[serde(default)]
     movies: Vec<YtsMovie>,
 }
 
@@ -30,6 +31,7 @@ struct YtsMovie {
     genres: Vec<String>,
     #[allow(dead_code)]
     summary: String,
+    #[serde(default)]
     torrents: Vec<YtsTorrent>,
 }
 
@@ -59,7 +61,7 @@ impl YtsClient {
 
         Self {
             client,
-            base_url: "https://yts.mx/api/v2".to_string(),
+            base_url: "https://yts.gg/api/v2".to_string(),
         }
     }
 
